@@ -53,6 +53,10 @@ python3 -m http.server
 
 5. Import files by dragging them into the editor area or using the file input.
 
+## Screenshot
+
+![App Screenshot](screenshot/screen.jpg)
+
 ## Contributing
 
 Contributions and suggestions are welcome! Please open issues or pull requests for bug fixes, new features, or improvements.
