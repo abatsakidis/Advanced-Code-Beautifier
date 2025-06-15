@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Advanced Code Beautifier</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css" />
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #1e1e1e;
+      color: #f8f8f2;
+      transition: background 0.3s, color 0.3s;
+    }
+    header {
+      background-color: #282a36;
+      color: #f8f8f2;
+      padding: 1rem;
+      text-align: center;
+      font-size: 1.5rem;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: center;
+      background: #2d2d2d;
+      padding: 1rem;
+    }
+    select, button, input[type="file"] {
+      padding: 0.5rem;
+      font-size: 1rem;
+      border-radius: 5px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      padding: 1rem;
+    }
+    .editor-container {
+      /* auto height with max */
+      max-height: 500px;
+      height: auto;
+      overflow: hidden;
+      position: relative;
+    }
+    footer {
+      text-align: center;
+      font-size: 0.8rem;
+      padding: 1rem;
+      background: #222;
+    }
+    .CodeMirror {
+      height: auto !important;
+      max-height: 500px;
+      width: 100%;
+      box-sizing: border-box;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      word-break: break-word;
+      line-height: 1.3em;
+    }
+    .CodeMirror-scroll {
+      overflow-x: hidden !important;
+      overflow-y: auto !important;
+      max-height: 500px;
+    }
+    #statusbar {
+      color: #ccc;
+      font-size: 0.9rem;
+      padding: 0 1rem 0.5rem 1rem;
+      text-align: right;
+      font-family: monospace;
+      user-select: none;
+    }
+    /* Toast message */
+    #toast {
+      visibility: hidden;
+      min-width: 150px;
+      background-color: #333;
+      color: #fff;
+      text-align: center;
+      border-radius: 4px;
+      padding: 0.5rem;
+      position: fixed;
+      z-index: 1000;
+      right: 1rem;
+      bottom: 1rem;
+      font-family: monospace;
+      opacity: 0;
+      transition: opacity 0.5s ease-in-out;
+    }
+    #toast.show {
+      visibility: visible;
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <header>Advanced Code Beautifier</header>
+
+  <div class="controls">
+    <label for="language">Language:</label>
+    <select id="language">
+      <option value="js">JavaScript / JSON</option>
+      <option value="ts">TypeScript</option>
+      <option value="jsx">JSX</option>
+      <option value="tsx">TSX</option>
+      <option value="html">HTML</option>
+      <option value="css">CSS / SCSS / SASS</option>
+    </select>
+
+    <label><input type="checkbox" id="minify"> Minify</label>
+    <input type="file" id="fileInput" />
+    <button id="beautifyBtn">Beautify</button>
+    <button id="copyBtn">Copy</button>
+    <button id="downloadBtn">Download</button>
+    <button id="toggleThemeBtn">🌗 Toggle Theme</button>
+  </div>
+
+  <main>
+    <div class="editor-container">
+      <textarea id="input"></textarea>
+    </div>
+    <div class="editor-container">
+      <textarea id="output" readonly></textarea>
+    </div>
+  </main>
+
+  <div id="statusbar">Ln 1, Col 1</div>
+  <div id="toast"></div>
+
+  <footer>
+    Paste or open a file — auto beautify on paste is enabled. Supported: JS, JSON, HTML, CSS, SASS, SCSS, TS, JSX, TSX
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/css/css.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/htmlmixed/htmlmixed.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/edit/closebrackets.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-beautify@1.14.7/js/lib/beautify.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-beautify@1.14.7/js/lib/beautify-css.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-beautify@1.14.7/js/lib/beautify-html.js"></script>
+
+  <script>
+    // Toast helper
+    function showToast(msg, duration = 2000) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, duration);
+    }
+
+    // Language to mode map
+    const modeMap = {
+      js: "javascript",
+      ts: "javascript",  // fallback
+      jsx: "jsx",
+      tsx: "jsx",
+      html: "htmlmixed",
+      css: "css"
+    };
+
+    // Initialize editors with auto height & line wrapping
+    const input = CodeMirror.fromTextArea(document.getElementById('input'), {
+      mode: 'javascript',
+      lineNumbers: true,
+      matchBrackets: true,
+      autoCloseBrackets: true,
+      theme: 'dracula',
+      lineWrapping: true,
+      viewportMargin: Infinity // load all lines for correct height
+    });
+
+    const output = CodeMirror.fromTextArea(document.getElementById('output'), {
+      readOnly: true,
+      lineNumbers: true,
+      theme: 'dracula',
+      lineWrapping: true,
+      viewportMargin: Infinity
+    });
+
+    // Autosize function for editors (height adjust)
+    function autosizeEditor(cm) {
+      const lineCount = cm.lineCount();
+      const lineHeight = 20; // px approximate (depends on theme/font)
+      const newHeight = Math.min(lineCount * lineHeight + 10, 500); // max 500px
+      cm.getWrapperElement().style.height = newHeight + "px";
+      cm.refresh();
+    }
+
+    input.on('change', () => {
+      autosizeEditor(input);
+      updateCursorStatus();
+      beautifyCode(true);
+      saveToLocalStorage();
+    });
+    output.on('change', () => autosizeEditor(output));
+
+    // Update cursor position status
+    function updateCursorStatus() {
+      const cursor = input.getCursor();
+      const status = `Ln ${cursor.line + 1}, Col ${cursor.ch + 1}`;
+      document.getElementById('statusbar').textContent = status;
+    }
+    input.on('cursorActivity', updateCursorStatus);
+
+    // Load from localStorage on page load
+    function loadFromLocalStorage() {
+      const saved = localStorage.getItem('codeInput');
+      const savedLang = localStorage.getItem('codeLang');
+      if (saved) input.setValue(saved);
+      if (savedLang && modeMap[savedLang]) {
+        setLanguage(savedLang);
+        document.getElementById('language').value = savedLang;
+      }
+      autosizeEditor(input);
+      autosizeEditor(output);
+    }
+
+    // Save to localStorage
+    function saveToLocalStorage() {
+      localStorage.setItem('codeInput', input.getValue());
+      localStorage.setItem('codeLang', document.getElementById('language').value);
+    }
+
+    // Set language mode of CodeMirror
+    function setLanguage(lang) {
+      const mode = modeMap[lang] || 'javascript';
+      input.setOption('mode', mode);
+    }
+
+    // Beautify code
+    function beautifyCode(isAuto = false) {
+      const lang = document.getElementById('language').value;
+      const minify = document.getElementById('minify').checked;
+      let code = input.getValue();
+      if (!code.trim()) {
+        if (!isAuto) showToast("Empty input");
+        output.setValue('');
+        return;
+      }
+
+      const opts = minify ? { indent_size: 0 } : { indent_size: 2 };
+      let result = code;
+      try {
+        if (["js", "ts", "jsx", "tsx"].includes(lang)) {
+          result = js_beautify(code, opts);
+        } else if (lang === "html") {
+          result = html_beautify(code, opts);
+        } else if (lang === "css") {
+          result = css_beautify(code, opts);
+        }
+      } catch (e) {
+        result = `Error: ${e.message}`;
+      }
+      output.setValue(result);
+      autosizeEditor(output);
+    }
+
+    // Copy to clipboard with toast feedback
+    function copyToClipboard() {
+      const text = output.getValue();
+      if (!text) {
+        showToast("Nothing to copy");
+        return;
+      }
+      navigator.clipboard.writeText(text).then(() => {
+        showToast("Copied to clipboard");
+      }).catch(() => {
+        showToast("Copy failed");
+      });
+    }
+
+    // Download output as file
+    function downloadOutput() {
+      const lang = document.getElementById('language').value;
+      const extMap = {
+        js: 'js',
+        ts: 'ts',
+        jsx: 'jsx',
+        tsx: 'tsx',
+        html: 'html',
+        css: 'css'
+      };
+      const ext = extMap[lang] || 'txt';
+      const text = output.getValue();
+      if (!text) {
+        showToast("No output to download");
+        return;
+      }
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `code_beautified.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // File input handling with size check (max 1MB)
+    document.getElementById('fileInput').addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 1_000_000) {
+        alert("File too large (>1MB), please choose a smaller file.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        input.setValue(ev.target.result);
+        autosizeEditor(input);
+        beautifyCode();
+      };
+      reader.readAsText(file);
+    });
+
+    // Language selector change event
+    document.getElementById('language').addEventListener('change', e => {
+      const lang = e.target.value;
+      setLanguage(lang);
+      beautifyCode();
+      saveToLocalStorage();
+    });
+
+    // Buttons events
+    document.getElementById('beautifyBtn').addEventListener('click', () => beautifyCode(false));
+    document.getElementById('copyBtn').addEventListener('click', copyToClipboard);
+    document.getElementById('downloadBtn').addEventListener('click', downloadOutput);
+
+    // Theme toggle and auto detect
+    const prefersDarkScheme = window.matchMedia("(prefers-color-scheme: dark)");
+    const darkTheme = "dracula";
+    const lightTheme = "default";
+
+    function applyTheme(theme) {
+      input.setOption('theme', theme);
+      output.setOption('theme', theme);
+      document.body.style.backgroundColor = (theme === darkTheme) ? "#1e1e1e" : "#fff";
+      document.body.style.color = (theme === darkTheme) ? "#f8f8f2" : "#000";
+    }
+
+    function detectAndApplyTheme() {
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme) {
+        applyTheme(savedTheme);
+      } else {
+        applyTheme(prefersDarkScheme.matches ? darkTheme : lightTheme);
+      }
+    }
+
+    document.getElementById('toggleThemeBtn').addEventListener('click', () => {
+      const currentTheme = input.getOption('theme');
+      const newTheme = (currentTheme === darkTheme) ? lightTheme : darkTheme;
+      applyTheme(newTheme);
+      localStorage.setItem('theme', newTheme);
+    });
+
+    prefersDarkScheme.addEventListener('change', () => {
+      const savedTheme = localStorage.getItem('theme');
+      if (!savedTheme) detectAndApplyTheme();
+    });
+
+    // Keyboard shortcuts
+    window.addEventListener('keydown', e => {
+      if (e.ctrlKey && e.key === 's') {
+        e.preventDefault();
+        beautifyCode(false);
+        showToast("Beautified (Ctrl+S)");
+      }
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        beautifyCode(false);
+        showToast("Beautified (Ctrl+Shift+B)");
+      }
+      if (e.ctrlKey && e.key.toLowerCase() === 'c') {
+        // Ctrl+C default copy is enough for textareas,
+        // but we can enhance if output focused.
+        if (document.activeElement === output.getInputField()) {
+          e.preventDefault();
+          copyToClipboard();
+        }
+      }
+    });
+
+    // Initial load
+    loadFromLocalStorage();
+    detectAndApplyTheme();
+    updateCursorStatus();
+    autosizeEditor(input);
+    autosizeEditor(output);
+
+  </script>
+</body>
+</html>
