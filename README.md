@@ -57,6 +57,6 @@ python3 -m http.server
 
 Contributions and suggestions are welcome! Please open issues or pull requests for bug fixes, new features, or improvements.
 
-##License
+## License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
